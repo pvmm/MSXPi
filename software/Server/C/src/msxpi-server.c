@@ -764,7 +764,7 @@ int sync_client() {
     return rc;
 }
 
-int ptype(unsigned char *msxcommand) {
+int ptype(char *msxcommand) {
     int rc;
     FILE *fp;
     int filesize;
@@ -774,9 +774,9 @@ int ptype(unsigned char *msxcommand) {
     
     //printf("ptype:starting %s\n",msxcommand);
     
-    if (strlen((char*)msxcommand)>5) {
-        fname = malloc((sizeof(*fname) * strlen((char*)msxcommand)) - 5);
-        strcpy(fname,((char*)msxcommand)+6);
+    if (strlen(msxcommand)>5) {
+        fname = malloc((sizeof(*fname) * strlen(msxcommand)) - 5);
+        strcpy(fname,(msxcommand)+6);
         
         //printf("ptype:fname is %s\n",fname);
 
