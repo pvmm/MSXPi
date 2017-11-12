@@ -236,6 +236,8 @@ bool PIEXCHANGETIMEDOUT = false;
 pthread_mutex_t newComMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t newComCond  = PTHREAD_COND_INITIALIZER;
 
+int loadfile_remote(char *theurl, MemoryStruct *chunk);
+
 void delay(unsigned int secs) {
     unsigned int retTime = time(0) + secs;   // Get finishing time.
     while (time(0) < retTime);               // Loop until it arrives.
@@ -470,7 +472,9 @@ transferStruct senddatablock(unsigned char *buffer, int datasize, bool sendsize)
     transferStruct dataInfo;
     
     int bytecounter = 0;
+
     unsigned char mymsxbyte,mypibyte;
+
     unsigned char crc = 0;
     
     //printf("senddatablock: starting\n");
@@ -765,14 +769,14 @@ int ptype(unsigned char *msxcommand) {
     FILE *fp;
     int filesize;
     unsigned char *buf;
-    unsigned char *fname;
+    char *fname;
     transferStruct dataInfo;
     
     //printf("ptype:starting %s\n",msxcommand);
     
-    if (strlen(msxcommand)>5) {
-        fname = malloc((sizeof(*fname) * strlen(msxcommand)) - 5);
-        strcpy(fname,msxcommand+6);
+    if (strlen((char*)msxcommand)>5) {
+        fname = malloc((sizeof(*fname) * strlen((char*)msxcommand)) - 5);
+        strcpy(fname,((char*)msxcommand)+6);
         
         //printf("ptype:fname is %s\n",fname);
 
@@ -791,7 +795,7 @@ int ptype(unsigned char *msxcommand) {
         } else {
             filesize = 22;
             buf = malloc(sizeof(*buf) * filesize);
-            strcpy(buf,"Pi:Error opening file");
+            strcpy((char*)buf,"Pi:Error opening file");
         }
         
         free(fname);
@@ -799,7 +803,7 @@ int ptype(unsigned char *msxcommand) {
     } else {
         filesize = 22;
         buf = malloc(sizeof(*buf) * filesize);
-        strcpy(buf,"Pi:Error opening file");
+        strcpy((char*)buf,"Pi:Error opening file");
     }
     
     //printf("ptype:file size is %i\n",filesize);
@@ -827,7 +831,7 @@ int runpicmd(char *msxcommand) {
     
     //printf("runpicmd:prepared output in command >%s<\n",fname);
     
-    if(fp = popen(fname, "r")) {
+    if((fp = popen(fname, "r"))) {
         fclose(fp);
         filesize = 24;
         buf = malloc(sizeof(*buf) * 256 );
@@ -992,7 +996,7 @@ int ploadrom(struct psettype *psetvar,char *msxcommand) {
     }
     
     printf("load:sending stdout %s\n",stdout);
-    dataInfo = senddatablock(stdout,strlen(stdout)+1,true);
+    dataInfo = senddatablock(stdout,strlen((char*)stdout)+1,true);
     
     free(tokens);
     free(stdout);
@@ -1003,7 +1007,7 @@ int ploadrom(struct psettype *psetvar,char *msxcommand) {
     
 }
 
-int loadbin(char *msxcommand) {
+int loadbin(unsigned char *msxcommand) {
     int rc;
     FILE *fp;
     int filesize,index,blocksize,retries;
@@ -1015,7 +1019,7 @@ int loadbin(char *msxcommand) {
     
     //printf("loadbin:starting %s\n",msxcommand);
     
-    tokens = str_split(msxcommand,' ');
+    tokens = str_split((char*)msxcommand,' ');
     printf("loadbin:parsed command is %s %s\n",*(tokens),*(tokens + 1));
     
     rc = RC_UNDEFINED;
@@ -1115,7 +1119,7 @@ int loadbin(char *msxcommand) {
     
    // if (rc!=RC_SUCCESS) {
         printf("load:sending stdout: size=%i, %s\n",strlen(stdout)+1,stdout);
-        dataInfo = senddatablock(stdout,strlen(stdout)+1,true);
+        dataInfo = senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     //}
     
     free(tokens);
@@ -1224,7 +1228,7 @@ int msxdos_writesector(unsigned char *currentdrive,DOS_SectorStruct *sectorInfo)
 int pnewdisk(char * msxcommand, char *dsktemplate) {
     char** tokens;
     struct stat diskstat;
-    unsigned char *stdout;
+    char *stdout;
     char *cpycmd;
     int rc;
     FILE *fp;
@@ -1246,7 +1250,7 @@ int pnewdisk(char * msxcommand, char *dsktemplate) {
         
         sprintf(cpycmd,"cp %s %s",dsktemplate,*(tokens + 1));
         
-        if(fp = popen(cpycmd, "r")) {
+        if((fp = popen(cpycmd, "r"))) {
             fclose(fp);
             
             // check if file was created
@@ -1266,7 +1270,7 @@ int pnewdisk(char * msxcommand, char *dsktemplate) {
     } else
         strcpy(stdout,"Pi:Error\nSyntax: pnewdisk <file>");
     
-    senddatablock(stdout,strlen(stdout)+1,true);
+    senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     
     free(tokens);
     free(stdout);
@@ -1288,7 +1292,7 @@ int msxdos_format(struct DiskImgInfo *driveInfo) {
     printf("msxdos_format:Formating drive: %s\n",cpycmd);
     
     // run mkfs command using popen()"
-    if(fp = popen(cpycmd, "r")) {
+    if((fp = popen(cpycmd, "r"))) {
         fclose(fp);
         piexchangebyte(ENDTRANSFER);
         rc = RC_SUCCESS;
@@ -1302,7 +1306,7 @@ int msxdos_format(struct DiskImgInfo *driveInfo) {
     return rc;
 }
 
-int * msxdos_inihrd(struct DiskImgInfo *driveInfo) {
+int msxdos_inihrd(struct DiskImgInfo *driveInfo) {
     
     int rc,fp;
     struct   stat diskstat;
@@ -1317,10 +1321,10 @@ int * msxdos_inihrd(struct DiskImgInfo *driveInfo) {
         
         if (stat(driveInfo->dskname, &diskstat) == 0) {
             driveInfo->size = diskstat.st_size;
-            if ((driveInfo->data = mmap((caddr_t)0, driveInfo->size, PROT_READ | PROT_WRITE, MAP_SHARED, fp, 0))  == (caddr_t) -1) {
+            if (((caddr_t) (driveInfo->data = mmap(0, driveInfo->size, PROT_READ | PROT_WRITE, MAP_SHARED, fp, 0))) == (caddr_t) -1) {
                 printf("msxdos_inihrd:Disk image failed to mount\n");
             } else {
-                printf("msxdos_inihrd:Disk mapped in ram with size %i Bytes\n",driveInfo->size);
+                printf("msxdos_inihrd:Disk mapped in ram with size %f Bytes\n",driveInfo->size);
                 driveInfo->rc = RC_SUCCESS;
             }
         } else {
@@ -1378,7 +1382,7 @@ struct DiskImgInfo psetdisk(char * msxcommand) {
         strcpy(stdout,"Pi:Error\nSyntax: psetdisk <0|1> <file>");
     }
     
-    senddatablock(stdout,strlen(stdout)+1,true);
+    senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     free(tokens);
     free(stdout);
     
@@ -1453,7 +1457,7 @@ int pset(struct psettype *psetvar, char *msxcommand) {
         }
     }
     
-    senddatablock(stdout,strlen(stdout)+1,true);
+    senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     
     free(stdout);
     free(tokens);
@@ -1476,7 +1480,7 @@ int pwifi(char * msxcommand, char *wifissid, char *wifipass) {
         printf("pset:missing parameters\n");
         strcpy(stdout,"Pi:Error\nSyntax: pwifi display | set");
         piexchangebyte(RC_FAILED);
-        senddatablock(stdout,strlen(stdout)+1,true);
+        senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     } else if ((strncmp(*(tokens + 1),"DISPLAY",1)==0) ||
                (strncmp(*(tokens + 1),"display",1)==0)) {
         
@@ -1504,7 +1508,7 @@ int pwifi(char * msxcommand, char *wifissid, char *wifipass) {
         printf("pset:Invalid parameters\n");
         strcpy(stdout,"Pi:Error\nSyntax: pwifi display | set");
         piexchangebyte(RC_FAILED);
-        senddatablock(stdout,strlen(stdout)+1,true);
+        senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     }
     
     free(tokens);
@@ -1539,7 +1543,7 @@ int pcd(struct psettype *psetvar,char * msxcommand) {
         // pcd without parameters should go to home?
         //strcpy(psetvar[0].value,HOMEPATH);
         sprintf(stdout,"%s\n",psetvar[0].value);
-        senddatablock(stdout,strlen(stdout)+1,true);
+        senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
         printf("pcd:PCD empty or invalid - exiting with rc=%x\n",rc);
         free(stdout);
         return rc;
@@ -1649,7 +1653,7 @@ int pcd(struct psettype *psetvar,char * msxcommand) {
         printf("pdir:out of sync\n");
         return RC_FAILED;
     }
-    senddatablock(stdout,strlen(stdout)+1,true);
+    senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
     
     free(tokens);
     printf("freeing memory-stdout - this locks down the server, must be fixed.\n");
@@ -1704,7 +1708,7 @@ int pdir(struct psettype *psetvar, char *msxcommand) {
         } else {
             printf("pdir:listing error\n");
             if (piexchangebyte(RC_FAILED)==SENDNEXT) {
-                strcpy(chunk.memory,"Pi:Error");
+                strcpy((char*)chunk.memory,"Pi:Error");
                 senddatablock(chunk.memory,9,true);
             }
         }
@@ -1811,7 +1815,7 @@ int loadfile_local(char *theurl,MemoryStruct *chunk) {
     printf("loadfile_local:File size is:%i\n",chunk->size);
     
     //Allocate memory
-    chunk->memory = (char *)realloc(chunk->memory,chunk->size + 1);
+    chunk->memory = realloc(chunk->memory,chunk->size + 1);
     if (!chunk->memory) {
         fprintf(stderr, "Memory error!");
         fclose(fd);
@@ -1953,7 +1957,7 @@ int pcopy(struct psettype *psetvar, char *msxcommand, MemoryStruct *chunkptr) {
         piexchangebyte(RC_FAILED);
         strcpy(stdout,"Pi:Error\nSyntax: pcopy <source url> <target file>\n");
         printf("%i\n",strlen(stdout));
-        senddatablock(stdout,strlen(stdout)+1,true);
+        senddatablock((unsigned char*)stdout,strlen(stdout)+1,true);
         free(stdout);
         return RC_FAILED;
     }
@@ -2021,7 +2025,7 @@ int pcopy(struct psettype *psetvar, char *msxcommand, MemoryStruct *chunkptr) {
         printf("with FAILURE\n");
         piexchangebyte(RC_FAILED);
         sprintf(stdout,"Pi:Error with httpcode: %i",rc);
-        senddatablock(stdout,30,true);
+        senddatablock((unsigned char*)stdout,30,true);
         free(tokens);
         free(stdout);
         free(theurl);
@@ -2040,7 +2044,7 @@ int pcopy(struct psettype *psetvar, char *msxcommand, MemoryStruct *chunkptr) {
     
 }
 
-int nfs_8dot3(char *strin, char ***strout){
+void nfs_8dot3(char *strin, char *strout){
     char name[8];
     char ext[4];
     int len1,len2;
@@ -2051,7 +2055,7 @@ int nfs_8dot3(char *strin, char ***strout){
     
     tokens = str_split(strin,'.');
     if (*(tokens + 1)==NULL)
-        sprintf(strout," %-8s    ",*(tokens + 0));
+        sprintf(strout," %-8s    ", *(tokens + 0));
     else {
         len1=strlen(*(tokens + 0));
         len2=strlen(*(tokens + 1));
@@ -2068,7 +2072,7 @@ int nfs_8dot3(char *strin, char ***strout){
 
 char * nfs_setfname(char curpath[254],char *msxpath) {
     char localpath[254];
-    char localthisfile[254];
+    static char localthisfile[254];
     long filesize;
     struct stat st;
     struct tm *sttime;
@@ -2094,7 +2098,7 @@ char * nfs_setfname(char curpath[254],char *msxpath) {
     
     if(dst != 0) {
         printf("nfs_setfname:file not found\n");
-        return 1;
+        return NULL;
     }
     
     
@@ -2106,10 +2110,10 @@ char * nfs_setfname(char curpath[254],char *msxpath) {
             tokens = str_split(msxpath,'/');
             for(;*(tokens+i)!=NULL;i++) {};
             
-            nfs_8dot3(*(tokens+i-1),&localthisfile);
+            nfs_8dot3(*(tokens+i-1),localthisfile);
         } else
             // format filename to 8.3 characters and terminate with zero
-            nfs_8dot3(msxpath,&localthisfile);
+            nfs_8dot3(msxpath,localthisfile);
         
     } else {
         strcpy(localthisfile," ");
@@ -2157,7 +2161,7 @@ char * nfs_setfname(char curpath[254],char *msxpath) {
     
     printf("nfs_setfname:Returning:%s\n",localthisfile+1);
     
-    return &localthisfile;
+    return localthisfile;
     
 }
 
@@ -2192,8 +2196,6 @@ void dos_ffirst(char *curpath,char *msxpath) {
     }
     
     printf("ffirst:Exiting curpath=%s,msxpath=%s,rc=%x\n",curpath,msxpath,rc);
-    return rc;
-    
 }
 
 int dos_fnext(char *msxpath,int nfs_findex,int nfs_count,char *filelist) {
@@ -2218,11 +2220,16 @@ int dos_fnext(char *msxpath,int nfs_findex,int nfs_count,char *filelist) {
     
     printf("fnext:file %i of %i:%s\n",nfs_findex,nfs_count,filelist);
     
-    thisFile = malloc(255*sizeof(*thisFile));
+    //thisFile = malloc(255*sizeof(*thisFile));
     thisFile = nfs_setfname(msxpath,filelist);
+
+    if (thisFile == NULL) {
+        piexchangebyte(__NOFIL);
+        printf("fnext:no such file or directory\n");
+        return RC_FILENOTFOUND;
+    }
+
     printf("fnext:sending:>%s, len=%i<\n",thisFile,strlen(thisFile));
-    
-    
     piexchangebyte(__SUCCESS);
     
     rc = secsenddata(thisFile+1,24);
@@ -2254,8 +2261,8 @@ int pdate() {
         return RC_FAILED;
     }
     
-    piexchangebyte(2000+((timeinfo->tm_year)-100)&0xff);
-    piexchangebyte(2000+((timeinfo->tm_year)-100)>>8);
+    piexchangebyte((2000+((timeinfo->tm_year)-100))&0xff);
+    piexchangebyte((2000+((timeinfo->tm_year)-100))>>8);
     piexchangebyte((timeinfo->tm_mon)+1);
     piexchangebyte(timeinfo->tm_mday);
     
@@ -2292,7 +2299,7 @@ int pplay(char *msxcommand) {
     printf("pplay:Calling media player for %s\n",msxcommand);
     fname = malloc(sizeof(*fname) * 128);
     sprintf(fname,"/home/pi/msxpi/pplay.sh %s>/tmp/msxpi_out.txt 2>&1",msxcommand);
-    if(fp = popen(fname, "r")) {
+    if((fp = popen(fname, "r"))) {
         fclose(fp);
         if (piexchangebyte(RC_SUCCESS)==SENDNEXT) {
             buf = malloc(sizeof(*buf) * 25 );
@@ -2518,7 +2525,8 @@ int main(int argc, char *argv[]){
     char buf[255];
     
     // NFS VARIABLES
-    int nfs_findex,nfs_fcount;
+    int nfs_findex;
+    size_t nfs_fcount;
     char curpath[254];
     char nfs_workingdir[254];
     char nfs_msxpath[65];
@@ -2671,7 +2679,7 @@ int main(int argc, char *argv[]){
                           (strncmp(msxcommand,"PLOADROM",8)==0)) {
                     
                     printf("PLOADROM\n");
-                    rc = ploadrom(&psetvar,msxcommand);
+                    rc = ploadrom(psetvar,msxcommand);
                     
                     appstate = st_cmd;
                     
@@ -2760,7 +2768,7 @@ int main(int argc, char *argv[]){
                     
                     printf("PDIR\n");
                     
-                    if (pdir(&psetvar,msxcommand)!=RC_SUCCESS)
+                    if (pdir(psetvar,msxcommand)!=RC_SUCCESS)
                         printf("!!!!! Error !!!!!\n");
                     
                     appstate = st_cmd;
@@ -2781,7 +2789,7 @@ int main(int argc, char *argv[]){
                         chunk.memory = malloc(1);
                         chunk.size = 0;
 
-                        if (pcopy(&psetvar,msxcommand,chunkptr)!=RC_SUCCESS) {
+                        if (pcopy(psetvar,msxcommand,chunkptr)!=RC_SUCCESS) {
                             pcopystat2 = 0;
                             printf("!!!!! Error !!!!!\n");
                         } else
@@ -2821,13 +2829,13 @@ int main(int argc, char *argv[]){
                     if (currentdrive.rc!=RC_FAILED) {
                         if (currentdrive.deviceNumber == 0) {
                             munmap(drive0.data,drive0.size);
-                            strcpy(&drive0.dskname,&currentdrive.dskname);
+                            strcpy(drive0.dskname,currentdrive.dskname);
                             printf("calling INIHRD with %s\n",drive0.dskname);
                             msxdos_inihrd(&drive0);
                             strcpy(psetvar[1].value,drive0.dskname);
                         } else if (currentdrive.deviceNumber == 1) {
                             munmap(drive1.data,drive1.size);
-                            strcpy(&drive1.dskname,&currentdrive.dskname);
+                            strcpy(drive1.dskname,currentdrive.dskname);
                             printf("calling INIHRD with %s\n",drive1.dskname);
                             msxdos_inihrd(&drive1);
                             strcpy(psetvar[2].value,drive1.dskname);
@@ -2845,7 +2853,7 @@ int main(int argc, char *argv[]){
                     
                     printf("PSET\n");
                     
-                    if (pset(&psetvar,msxcommand)!=RC_SUCCESS)
+                    if (pset(psetvar,msxcommand)!=RC_SUCCESS)
                         printf("!!!!! Error !!!!!\n");
                     
                     appstate = st_cmd;
@@ -2856,7 +2864,7 @@ int main(int argc, char *argv[]){
                     
                     printf("PCD\n");
                     
-                    if (pcd(&psetvar,msxcommand)!=RC_SUCCESS)
+                    if (pcd(psetvar,msxcommand)!=RC_SUCCESS)
                         printf("!!!!! Error !!!!!\n");
                     
                     appstate = st_cmd;
@@ -2890,7 +2898,7 @@ int main(int argc, char *argv[]){
                     nfs_findex = 0;
                     printf("NFS_FFIRST:1:curpath=%s,nfs_workingdir=%s\n",curpath,nfs_workingdir);
                     // read msx path or file name
-                    dos_ffirst(&curpath,&nfs_workingdir);
+                    dos_ffirst(curpath,nfs_workingdir);
                     printf("NFS_FFIRST:2:curpath=%s,nfs_workingdir=%s\n",curpath,nfs_workingdir);
                     
                     // list file(s)
@@ -2928,7 +2936,7 @@ int main(int argc, char *argv[]){
                     if (rc == RC_SUCCESS) {
                         strcpy(msxcommand,"cd ");
                         strcat(msxcommand,buf);
-                        rc = pcd(&psetvar,msxcommand);
+                        rc = pcd(psetvar,msxcommand);
                         if (rc==RC_SUCCESS) {
                             strcpy(curpath,psetvar[0].value);
                             piexchangebyte(__SUCCESS);
@@ -2956,7 +2964,7 @@ int main(int argc, char *argv[]){
                 } else if(strncmp(msxcommand,"GETVOL",6)==0) {
                     printf("NFS_GETVOL\n");
                     
-                    rc = secsenddata("RaspberryPi",11);
+                    rc = secsenddata((unsigned char*)"RaspberryPi",11);
                     
                     if (rc!=RC_SUCCESS)
                         printf("!!!!! Error !!!!!\n");
