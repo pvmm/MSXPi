@@ -768,7 +768,7 @@ int ptype(char *msxcommand) {
     int rc;
     FILE *fp;
     int filesize;
-    unsigned char *buf;
+    char *buf;
     char *fname;
     transferStruct dataInfo;
     
@@ -795,7 +795,7 @@ int ptype(char *msxcommand) {
         } else {
             filesize = 22;
             buf = malloc(sizeof(*buf) * filesize);
-            strcpy((char*)buf,"Pi:Error opening file");
+            strcpy(buf,"Pi:Error opening file");
         }
         
         free(fname);
@@ -803,11 +803,11 @@ int ptype(char *msxcommand) {
     } else {
         filesize = 22;
         buf = malloc(sizeof(*buf) * filesize);
-        strcpy((char*)buf,"Pi:Error opening file");
+        strcpy(buf,"Pi:Error opening file");
     }
     
     //printf("ptype:file size is %i\n",filesize);
-    dataInfo = senddatablock(buf,filesize+1,true);
+    dataInfo = senddatablock((unsigned char*)buf,filesize+1,true);
     free(buf);
     rc = dataInfo.rc;
     //printf("ptype:exiting rc = %x\n",rc);
