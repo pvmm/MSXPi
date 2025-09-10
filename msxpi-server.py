@@ -29,15 +29,15 @@ import subprocess
 from urllib.request import urlopen
 import requests
 import mmap
-#import fcntl,os
 import os
+import io
 import sys
+import stat
 import platform
 from os.path import exists
 from subprocess import Popen,PIPE,STDOUT
 from html.parser import HTMLParser
 import datetime
-import time
 import glob
 import array
 import socket
@@ -413,14 +413,24 @@ def pdir():
 
     try:
         if pathType == 0:
-            prun('ls -l ' + path)
+            print(f'{userPath=}')
+            with os.scandir(userPath or '.') as entries:
+                buf = io.StringIO()
+                for entry in entries:
+                    info = entry.stat()
+                    mode = stat.filemode(info.st_mode)
+                    size = info.st_size
+                    mtime = time.strftime('%b %d %H:%M', time.localtime(info.st_mtime))
+                    name = entry.name
+                    print(f'{mode} {size:>8} {mtime} {name}', file=buf)
+                rc = sendmultiblock(buf.getvalue().encode(), BLKSIZE, RC_SUCCESS)
         else:
             parser = MyHTMLParser()
             htmldata = urlopen(path).read().decode()
             parser = MyHTMLParser()
             parser.feed(htmldata)
             buf = " ".join(parser.HTMLDATA)
-            rc = sendmultiblock(buf.encode(),BLKSIZE, RC_SUCCESS)
+            rc = sendmultiblock(buf.encode(), BLKSIZE, RC_SUCCESS)
     except Exception as e:
         sendmultiblock(('Pi:Error - ' + str(e)).encode(), BLKSIZE, RC_SUCCESS)
 
@@ -956,7 +966,7 @@ def pwifi():
 
 def pver():
     global version,build
-    ver = "MSXPi Server Version "+version+" Build "+ BuildId
+    ver = f'MSXPi Server Version {version}\nBuild {BuildId}'
     rc = sendmultiblock(ver.encode(), BLKSIZE, RC_SUCCESS)
     return rc
     
@@ -1396,8 +1406,8 @@ def pshut():
     os.system("sudo shutdown -h now")
     
 def exitDueToSyncError():
-    print("Sync error. Recycling MSXPi-Server")
-    os.system("/home/pi/msxpi/kill.sh")
+    print("Sync error. Recycling MSXPi-Server connection")
+    conn.close()
 
 def updateIniFile(fname,memvar):
     f = open(fname, 'w')
@@ -1551,6 +1561,7 @@ allchann = []
 ircsock = None
 errcount = 0
 msxdos1boot = False
+conn = None
 
 # GPIO Pins is now defined by the user
 SPI_CS = int(getMSXPiVar("SPI_CS"))
@@ -1561,41 +1572,49 @@ RPI_READY = int(getMSXPiVar("RPI_READY"))
 
 print("Starting MSXPi Server Version ",version,"Build",BuildId)
 
-if detect_host() == "Raspberry Pi":
-    import RPi.GPIO as GPIO
-    init_spi_bitbang()
-    GPIO.output(RPI_READY, GPIO.LOW)
-    print("GPIO Initialized\n")
-else:
-    conn = initialize_connection()
+while True:
+    try:
+        if detect_host() == "Raspberry Pi":
+            import RPi.GPIO as GPIO
+            init_spi_bitbang()
+            GPIO.output(RPI_READY, GPIO.LOW)
+            print("GPIO Initialized\n")
+        else:
+            conn = initialize_connection()
 
-try:
-    while True:
+        while True:
+            try:
+                print("st_recvcmd: waiting command")
+                rc,buf = recvdata(CMDSIZE)
 
-        try:
-            print("st_recvcmd: waiting command")
-            rc,buf = recvdata(CMDSIZE)
+                if (rc == RC_SUCCESS):
+                    if buf[0] == 0:
+                        fullcmd=''
+                    else:
+                        fullcmd = buf.decode().split("\x00")[0]
 
-            if (rc == RC_SUCCESS):
-                if buf[0] == 0:
-                    fullcmd=''
-                else:
-                    fullcmd = buf.decode().split("\x00")[0]
+                    #print(f"Received command: {fullcmd}")
+                    cmd = fullcmd.split()[0].lower()
+                    parms = fullcmd[len(cmd)+1:]
+                    # Executes the command (first word in the string)
+                    # And passes the whole string (including command name) to the function
+                    # globals()['use_variable_as_function_name']() 
+                    globals()[cmd.strip()]()
+            except socket.error as e:
+                print('connection error...')
+                break
 
-                #print(f"Received command: {fullcmd}")
-                cmd = fullcmd.split()[0].lower()
-                parms = fullcmd[len(cmd)+1:]
-                # Executes the command (first word in the string)
-                # And passes the whole string (including command name) to the function
-                # globals()['use_variable_as_function_name']() 
-                globals()[cmd.strip()]()
-        except Exception as e:
-            errcount += 1
-            print(str(e))
-            recvdata(BLKSIZE)       # Read & discard parameters to avoid sync errors
-            sendmultiblock(("Pi:Error - "+str(e)).encode(),BLKSIZE, RC_FAILED)
+            except Exception as e:
+                errcount += 1
+                print(str(e))
+                recvdata(BLKSIZE)       # Read & discard parameters to avoid sync errors
+                sendmultiblock(("Pi:Error - "+str(e)).encode(),BLKSIZE, RC_FAILED)
 
-except KeyboardInterrupt:
-    if detect_host() == "Raspberry Pi":
-        GPIO.cleanup() # cleanup all GPIO
-    print("Terminating msxpi-server")
+    except socket.error as e:
+            print('Socket error. Retrying in 5 seconds')
+            time.sleep(5)
+
+    except KeyboardInterrupt:
+        if detect_host() == "Raspberry Pi":
+            GPIO.cleanup() # cleanup all GPIO
+        print("Terminating msxpi-server")
